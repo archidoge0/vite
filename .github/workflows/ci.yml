@@ -1,71 +1,68 @@
-name: CI
+name: GHAV Vite 2936 lint cache core
 
 on:
   push:
     branches:
-      - main
-  pull_request:
+      - 'codex/ghav-vite2936-*'
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        node_version: [12, 14, 15]
-        include:
-          - os: macos-latest
-            node_version: 14
-          - os: windows-latest
-            node_version: 14
-      fail-fast: false
-
-    name: 'Build&Test: node-${{ matrix.node_version }}, ${{ matrix.os }}'
+  lint:
+    runs-on: ubuntu-24.04
+    name: 'Lint: node-14, ubuntu-24.04'
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      YARN_CACHE_FOLDER: /home/runner/.cache/yarn
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Set node version to ${{ matrix.node_version }}
-        uses: actions/setup-node@v2
-        with:
-          node-version: ${{ matrix.node_version }}
-
-      - name: Versions
-        run: yarn versions
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Build vite
-        run: yarn build-vite
-
-      - name: Build plugin-vue
-        run: yarn build-plugin-vue
-
-      - name: Test serve
-        run: yarn test-serve --runInBand
-
-      - name: Test build
-        run: yarn test-build --runInBand
-
-  lint:
-    runs-on: ubuntu-latest
-    name: 'Lint: node-14, ubuntu-latest'
-    steps:
-      - uses: actions/checkout@v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Set node version to 14
-        uses: actions/setup-node@v2
+      - name: Set Node version
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 14
+          node-version: 14.21.3
+
+      - name: Pin Yarn classic
+        run: npm install --global yarn@1.22.22 --force
+
+      - name: Environment
+        run: |
+          node --version
+          yarn --version
+          yarn cache dir
+          printf 'GHAV_TASK_TREE=%s\n' "$(git rev-parse HEAD^{tree})"
+
+      - name: Restore Yarn dependency cache
+        id: yarn-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/yarn
+          key: ghav-vite2936-lint-dependencies-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ghav-vite2936-lint-dependencies-
 
       - name: Prepare
         run: |
+          set -e
           yarn install --frozen-lockfile
           yarn build-vite
           yarn build-plugin-vue
 
       - name: Lint
         run: yarn lint
+
+      - name: Output witness
+        if: always()
+        run: |
+          git status --porcelain
+          for dir in packages/vite/dist packages/plugin-vue/dist; do
+            if test -d "$dir"; then
+              find "$dir" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum
+            else
+              printf 'MISSING_DIST %s\n' "$dir"
+            fi
+          done
